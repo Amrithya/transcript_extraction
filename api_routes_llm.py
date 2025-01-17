@@ -4,13 +4,14 @@ from openai import OpenAI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import json
 import yaml
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the front-end URL here
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -18,7 +19,7 @@ app.add_middleware(
 
 app.mount("/ui", StaticFiles(directory="ui"), name="ui")
 
-# Load configuration
+# Loading configuration
 with open('config.yaml', 'r') as file:
     data = yaml.safe_load(file)
 
@@ -68,14 +69,15 @@ async def generate_transcript(topic: Topic):
 async def extract_information(request: ExtractionRequest):
     try:
         json_format_prompt = (
-            f"Transform the following extraction request into a JSON-izable format:\n"
-            f"{request.extraction_info}"
+            f"Transform the following extraction request into a JSON structure:\n"
+            f"{request.extraction_info}\n"
+            f"Provide only the JSON structure, without any explanation."
         )
         
         json_format_completion = client.chat.completions.create(
             model="llama-3.1-8b-instruct",
             messages=[
-                {"role": "system", "content": "You are an AI that formats information into JSON."},
+                {"role": "system", "content": "You are an AI that creates JSON structures."},
                 {"role": "user", "content": json_format_prompt}
             ],
             temperature=0.3,
@@ -85,32 +87,45 @@ async def extract_information(request: ExtractionRequest):
         json_structure = json_format_completion.choices[0].message.content.strip()
 
         extraction_prompt = (
-            f"Using the following JSON structure:\n{json_structure}\n\n"
-            f"Extract the required information from this transcript:\n{request.transcript}"
+            f"Using the following JSON structure:\n{json_structure}\n"
+            f"Extract the required information from this transcript and fill it into the JSON structure. "
+            f"Provide only the filled JSON, without any explanation:\n{request.transcript}"
         )
 
         extraction_completion = client.chat.completions.create(
             model="llama-3.1-8b-instruct",
             messages=[
-                {"role": "system", "content": "You are an AI that extracts information based on a JSON structure."},
+                {"role": "system", "content": "You are an AI that extracts information and formats it as JSON."},
                 {"role": "user", "content": extraction_prompt}
             ],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=500
         )
 
-        extracted_info = extraction_completion.choices[0].message.content.strip()
+        extracted_json = extraction_completion.choices[0].message.content.strip()
 
-        structured_info = {}
-        for line in extracted_info.split('\n'):
-            if ':' in line:
-                key, value = line.split(':', 1)
-                structured_info[key.strip()] = value.strip()
+        # Check if the extracted JSON is not empty
+        if not extracted_json:
+            raise ValueError("Extracted JSON is empty")
+
+        # Remove any leading/trailing whitespace or non-JSON characters
+        extracted_json = extracted_json.strip()
+        if extracted_json.startswith("```"):
+            extracted_json = extracted_json[7:]
+        if extracted_json.endswith("```"):
+            extracted_json = extracted_json[:-3]
+
+        # Parse the extracted JSON
+        structured_info = json.loads(extracted_json)
 
         return structured_info
 
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}. Raw content: {extracted_json}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
 if __name__ == '__main__':
     import uvicorn
