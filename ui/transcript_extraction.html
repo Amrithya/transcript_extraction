@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Call Transcript</title>
+    <script>
+        async function generateTranscript() {
+            const topicInput = document.getElementById('topic').value;
+            const responseContainer = document.getElementById('response');
+
+            responseContainer.innerHTML = '';  // Clear previous response
+
+            try {
+                const response = await fetch('http://localhost:8000/generate_transcript', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ topic: topicInput }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                responseContainer.innerHTML = `
+                    <h3>Generated Transcript:</h3>
+                    <pre id="transcript">${data.transcript}</pre>
+                    <label for="extract">Enter Details to Extract:</label>
+                    <input type="text" id="extract" name="extract" required minlength="10">
+                    <button onclick="extractInformation()">Extract Information</button>
+                    <div id="extractionResponse"></div>
+                `;
+            } catch (error) {
+                responseContainer.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function extractInformation() {
+            const transcript = document.getElementById('transcript').innerText;
+            const extractionInfo = document.getElementById('extract').value;
+            const extractionResponseContainer = document.getElementById('extractionResponse');
+
+            extractionResponseContainer.innerHTML = '';  // Clear previous response
+
+            try {
+                const response = await fetch('http://localhost:8000/extract_information', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        extraction_info: extractionInfo,
+                        transcript: transcript,
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                extractionResponseContainer.innerHTML = `
+                    <h3>Extracted Information:</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                extractionResponseContainer.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Call Transcript Generator</h1>
+    <label for="topic">Enter Topic:</label>
+    <input type="text" id="topic" name="topic" required minlength="3">
+    <button onclick="generateTranscript()">Generate Transcript</button>
+
+    <div id="response"></div>
+</body>
+</html>
