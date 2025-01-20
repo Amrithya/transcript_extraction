@@ -16,7 +16,7 @@ This project is a simple web application that allows users to generate call tran
   - `pydantic`
   - `uvicorn`
   - `openai`
-  - `pyyaml`
+  - `python-dotenv`
 
 ## Getting Started
 
@@ -37,19 +37,40 @@ This project is a simple web application that allows users to generate call tran
 2. Install the dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   pip install uv
+   uv venv  # Creating a clean environment and handling dependencies
+   uv pip install -r requirements.txt
      
-3. Add your OpenAI API key to config.yaml:
+3. Add your OpenAI API key:
 
    Use scaleway Generative APIs 
    https://www.scaleway.com/en/docs/ai-data/generative-apis/quickstart/
 
-4. Run the FastAPI server:
+4. Create an .env File:
+
+   In your project directory, create a .env file (you can do this using a text editor or the command line).
+   Add your environment variables to the .env file in the following format:
+
+   ```bash
+   access_key: YOUR_ACCESS_KEY
+   default_organization_id: YOUR_ORGANIZATION_ID
+   default_project_id: YOUR_PROJECT_ID
+   secret_key: YOUR_SECRET_KEY
+
+5. Test your connections using the test files: 
+
+   Update the secret_key and service url in the test files before running
+
+   ```bash
+      uv run YOUR_FILE_NAME.py
+
+
+6. Run the FastAPI server:
    
    ```bash
-   python api_routes_llm.py
+   uv run api_routes_llm.py
    
-5. Open a web browser and navigate :
+7. Open a web browser and navigate :
 
    ```bash
    ui/transcript_extraction.html

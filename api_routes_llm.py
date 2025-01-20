@@ -3,9 +3,10 @@ from pydantic import BaseModel, Field
 from openai import OpenAI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv, dotenv_values 
 from fastapi.staticfiles import StaticFiles
 import json
-import yaml
+import os
 
 app = FastAPI()
 
@@ -19,11 +20,8 @@ app.add_middleware(
 
 app.mount("/ui", StaticFiles(directory="ui"), name="ui")
 
-# Loading configuration
-with open('config.yaml', 'r') as file:
-    data = yaml.safe_load(file)
-
-api_key = data['secret_key']
+load_dotenv()  # Loading environment variables from .env file
+api_key = os.getenv("secret_key")
 
 client = OpenAI(
     base_url="https://api.scaleway.ai/v1",

@@ -4,12 +4,47 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generate Call Transcript</title>
+    <style>
+        textarea {
+            width: 95%;
+            height: 50px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #c9c9c9;
+            border-radius: 5px;
+        }
+        pre {
+            background-color: #e9e9e9;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+        code {
+            display: block;
+            background-color: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .loading {
+            color: #ff0000;
+            font-weight: bold;
+        }
+    </style>
     <script>
         async function generateTranscript() {
             const topicInput = document.getElementById('topic').value;
             const responseContainer = document.getElementById('response');
+            const loadingMessage = document.getElementById('loadingMessage');
 
             responseContainer.innerHTML = '';  // Clear previous response
+            loadingMessage.innerHTML = 'Generation in progress...';  // Show loading message for generation
 
             try {
                 const response = await fetch('http://localhost:8000/generate_transcript', {
@@ -29,12 +64,15 @@
                     <h3>Generated Transcript:</h3>
                     <pre id="transcript">${data.transcript}</pre>
                     <label for="extract">Enter Details to Extract:</label>
-                    <input type="text" id="extract" name="extract" required minlength="10">
+                    <textarea id="extract" name="extract" required minlength="10"></textarea>
                     <button onclick="extractInformation()">Extract Information</button>
                     <div id="extractionResponse"></div>
+                    <div id="extractionLoadingMessage" class="loading"></div> <!-- Extraction loading message -->
                 `;
             } catch (error) {
                 responseContainer.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            } finally {
+                loadingMessage.innerHTML = '';  // Hide loading message after generation
             }
         }
 
@@ -42,8 +80,10 @@
             const transcript = document.getElementById('transcript').innerText;
             const extractionInfo = document.getElementById('extract').value;
             const extractionResponseContainer = document.getElementById('extractionResponse');
+            const extractionLoadingMessage = document.getElementById('extractionLoadingMessage');
 
             extractionResponseContainer.innerHTML = '';  // Clear previous response
+            extractionLoadingMessage.innerHTML = 'Extraction in progress...';  // Show loading message for extraction
 
             try {
                 const response = await fetch('http://localhost:8000/extract_information', {
@@ -64,10 +104,12 @@
                 const data = await response.json();
                 extractionResponseContainer.innerHTML = `
                     <h3>Extracted Information:</h3>
-                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                    <pre><code>${JSON.stringify(data, null, 2)}</code></pre> <!-- JSON in code block -->
                 `;
             } catch (error) {
                 extractionResponseContainer.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            } finally {
+                extractionLoadingMessage.innerHTML = '';  // Hide extraction loading message
             }
         }
     </script>
@@ -75,9 +117,10 @@
 <body>
     <h1>Call Transcript Generator</h1>
     <label for="topic">Enter Topic:</label>
-    <input type="text" id="topic" name="topic" required minlength="3">
+    <textarea id="topic" name="topic" required minlength="3"></textarea>
     <button onclick="generateTranscript()">Generate Transcript</button>
 
+    <div id="loadingMessage" class="loading"></div>
     <div id="response"></div>
 </body>
 </html>
