@@ -104,18 +104,18 @@ async def extract_information(request: ExtractionRequest):
 
         extracted_json = extraction_completion.choices[0].message.content.strip()
 
-        # Check if the extracted JSON is not empty
+        # Checking if the extracted JSON is not empty
         if not extracted_json:
             raise ValueError("Extracted JSON is empty")
 
-        # Remove any leading/trailing whitespace or non-JSON characters
+        # Removing any leading/trailing whitespace or non-JSON characters
         extracted_json = extracted_json.strip()
         if extracted_json.startswith("```"):
             extracted_json = extracted_json[7:]
         if extracted_json.endswith("```"):
             extracted_json = extracted_json[:-3]
 
-        # Parse the extracted JSON
+        # Parsing the extracted JSON
         structured_info = json.loads(extracted_json)
 
         return structured_info
