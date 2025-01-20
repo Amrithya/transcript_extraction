@@ -3,3 +3,6 @@
 
 # Ignore environment variable files
 .env
+
+# Ignore Python virtual environment
+.python_version
