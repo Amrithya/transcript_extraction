@@ -38,7 +38,8 @@ This project is a simple web application that allows users to generate call tran
 
    ```bash
    pip install uv
-   uv venv  # Creating a clean environment and handling dependencies
+   uv venv ENV_NAME # Creating a clean environment and handling dependencies
+   YOUR_ENV_PATH/../Scripts/activate
    uv pip install -r requirements.txt
      
 3. Add your OpenAI API key:
