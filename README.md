@@ -47,7 +47,7 @@ This project is a simple web application that allows users to generate call tran
 4. Run the FastAPI server:
    
    ```bash
-   uvicorn api_routes_llm:app
+   python api_routes_llm.py
    
 5. Open a web browser and navigate :
 
