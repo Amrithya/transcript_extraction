@@ -53,18 +53,6 @@ This project is a simple web application that allows users to generate call tran
 
    ```bash
    ui/transcript_extraction.html
-  
-
-
-
-
-
-
-
-
-
-
-
 
 
 
