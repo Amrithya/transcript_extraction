@@ -1,130 +1,166 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from openai import OpenAI
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv, dotenv_values 
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Dict, Any, List
+import tiktoken
+from guidance import models, gen, system, user, assistant
+import logging
 import json
-import os
+import re
 
 app = FastAPI()
 
+app.mount("/ui", StaticFiles(directory="./ui"), name="static")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.mount("/ui", StaticFiles(directory="ui"), name="ui")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-load_dotenv()  # Loading environment variables from .env file
-api_key = os.getenv("secret_key")
+tokenizer = tiktoken.get_encoding('cl100k_base')
 
-client = OpenAI(
-    base_url="https://api.scaleway.ai/v1",
-    api_key=api_key
+openai_model = models.OpenAI(   
+    model="llama-3.1-8b-instruct",
+    max_streaming_tokens=1024,
+    tokenizer=tokenizer,
+    base_url="https://api.scaleway.ai/43712c54-4844-4d14-a045-6ebe90fb5221/v1",
+    echo=False
 )
 
-class Topic(BaseModel):
-    topic: str = Field(..., min_length=3, max_length=100, description="Topic for generating transcript")
+class TopicRequest(BaseModel):
+    topic: str
 
 class ExtractionRequest(BaseModel):
-    extraction_info: str = Field(..., min_length=10, description="Paragraph describing the information to extract")
-    transcript: str = Field(..., min_length=50, description="Call transcript")
+    paragraph: str
+    transcript: str
+
+class ConstrainedGenerator:
+    def __init__(self, model):
+        self.model = model
+
+    def generate_structured_output(self, context: str, output_schema: Dict[str, Any], max_attempts: int = 5):
+        schema_str = json.dumps(output_schema, indent=2)
+        
+        prompt = f"""
+        You are an expert information extraction assistant. 
+        Extract information following this exact JSON structure:
+        
+        {schema_str}
+        
+        Context: {context}
+        
+        Output the extracted information in the specified JSON format. 
+        Ensure your response is a complete, valid JSON object.
+        Do not include any text before or after the JSON object.
+        """
+        
+        for attempt in range(max_attempts):
+            try:
+                with system():
+                    self.model += "Generate a valid JSON object exactly matching the provided schema. No additional text."
+                
+                with user():
+                    self.model += prompt
+                
+                with assistant():
+                    result = self.model + gen(
+                        'output', 
+                        max_tokens=1024, 
+                        stop=None,
+                        temperature=0.1
+                    )
+                
+                json_str = result['output'].strip()
+                start = json_str.find('{')
+                end = json_str.rfind('}') + 1
+                if start != -1 and end != -1:
+                    json_str = json_str[start:end]
+                
+                json_str = re.sub(r'[^\x20-\x7E]', '', json_str)
+                
+                parsed_output = json.loads(json_str)
+                return parsed_output
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parsing failed on attempt {attempt + 1}: {e}")
+                logger.warning(f"Generated output: {json_str}")
+            except Exception as e:
+                logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
+        
+        raise ValueError(f"Failed to generate valid JSON after {max_attempts} attempts")
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_html():
-    with open("ui/transcript_extraction.html") as file:
-        return file.read()
+async def read_root():
+    with open("transcript_extraction.html", "r") as f:
+        return f.read()
 
 @app.post("/generate_transcript")
-async def generate_transcript(topic: Topic):
-    if not topic.topic:
-        raise HTTPException(status_code=400, detail="Topic is required")
-
-    try:
-        completion = client.chat.completions.create(
-            model="llama-3.1-8b-instruct",
-            messages=[
-                {"role": "system", "content": "You are an AI that generates realistic call transcripts between a client and a contact center agent."},
-                {"role": "user", "content": f"Generate a call transcript about {topic.topic}."}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-
-        transcript = completion.choices[0].message.content
-
-        return {"transcript": transcript}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def generate_transcript(request: TopicRequest):
+    global openai_model
+    topic = request.topic
+    
+    prompt_func = {
+        'system': "You will generate a call transcript based on the topic, and it can vary in structure.",
+        'user': f"Generate a call transcript between a client and a contact center agent discussing {topic}."
+    }
+    
+    with system():
+        openai_model += prompt_func['system']
+    with user():
+        openai_model += prompt_func['user']
+    with assistant():
+        result = openai_model + gen('output', max_tokens=1024)
+    
+    transcript = result['output'].strip()
+    return {"transcript": transcript}
 
 @app.post("/extract_information")
-async def extract_information(request: ExtractionRequest):
+async def extract_information_endpoint(request: ExtractionRequest):
+    logger.info(f"Received extraction request: {request}")
+    
+    output_schema = {
+        "issues": [
+            {
+                "description": "str"
+            }
+        ],
+        "solution": "str",
+        "additional_info": {
+            "key": "str"
+        }
+    }
+    
+    generator = ConstrainedGenerator(openai_model)
+    
     try:
-        json_format_prompt = (
-            f"Transform the following extraction request into a JSON structure:\n"
-            f"{request.extraction_info}\n"
-            f"Provide only the JSON structure, without any explanation."
+        extracted_info = generator.generate_structured_output(
+            context=request.transcript, 
+            output_schema=output_schema
         )
-        
-        json_format_completion = client.chat.completions.create(
-            model="llama-3.1-8b-instruct",
-            messages=[
-                {"role": "system", "content": "You are an AI that creates JSON structures."},
-                {"role": "user", "content": json_format_prompt}
-            ],
-            temperature=0.3,
-            max_tokens=300
-        )
-
-        json_structure = json_format_completion.choices[0].message.content.strip()
-
-        extraction_prompt = (
-            f"Using the following JSON structure:\n{json_structure}\n"
-            f"Extract the required information from this transcript and fill it into the JSON structure. "
-            f"Provide only the filled JSON, without any explanation:\n{request.transcript}"
-        )
-
-        extraction_completion = client.chat.completions.create(
-            model="llama-3.1-8b-instruct",
-            messages=[
-                {"role": "system", "content": "You are an AI that extracts information and formats it as JSON."},
-                {"role": "user", "content": extraction_prompt}
-            ],
-            temperature=0.3,
-            max_tokens=500
-        )
-
-        extracted_json = extraction_completion.choices[0].message.content.strip()
-
-        # Checking if the extracted JSON is not empty
-        if not extracted_json:
-            raise ValueError("Extracted JSON is empty")
-
-        # Removing any leading/trailing whitespace or non-JSON characters
-        extracted_json = extracted_json.strip()
-        if extracted_json.startswith("```"):
-            extracted_json = extracted_json[7:]
-        if extracted_json.endswith("```"):
-            extracted_json = extracted_json[:-3]
-
-        # Parsing the extracted JSON
-        structured_info = json.loads(extracted_json)
-
-        return structured_info
-
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}. Raw content: {extracted_json}")
+        return JSONResponse(content=extracted_info)
+    
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        logger.error(f"Extraction error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "message": "Failed to extract information. Please try again."}
+        )
 
-if __name__ == '__main__':
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception occurred: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"message": "An unexpected error occurred. Please try again later."}
+    )
+
+if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

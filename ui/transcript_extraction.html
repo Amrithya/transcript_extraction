@@ -47,7 +47,7 @@
             loadingMessage.innerHTML = 'Generation in progress...';  // Show loading message for generation
 
             try {
-                const response = await fetch('http://localhost:8000/generate_transcript', {
+                const response = await fetch("http://localhost:8000/generate_transcript/", {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -76,42 +76,43 @@
             }
         }
 
-        async function extractInformation() {
-            const transcript = document.getElementById('transcript').innerText;
-            const extractionInfo = document.getElementById('extract').value;
-            const extractionResponseContainer = document.getElementById('extractionResponse');
-            const extractionLoadingMessage = document.getElementById('extractionLoadingMessage');
+async function extractInformation() {
+    const transcript = document.getElementById('transcript').innerText;
+    const paragraph = document.getElementById('extract').value;
+    const extractionResponseContainer = document.getElementById('extractionResponse');
+    const extractionLoadingMessage = document.getElementById('extractionLoadingMessage');
 
-            extractionResponseContainer.innerHTML = '';  // Clear previous response
-            extractionLoadingMessage.innerHTML = 'Extraction in progress...';  // Show loading message for extraction
+    extractionResponseContainer.innerHTML = '';
+    extractionLoadingMessage.innerHTML = 'Extraction in progress...';
 
-            try {
-                const response = await fetch('http://localhost:8000/extract_information', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        extraction_info: extractionInfo,
-                        transcript: transcript,
-                    }),
-                });
+    try {
+        const response = await fetch('http://localhost:8000/extract_information', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                paragraph: paragraph.trim(),
+                transcript: transcript.trim(),
+            }),
+        });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const data = await response.json();
-                extractionResponseContainer.innerHTML = `
-                    <h3>Extracted Information:</h3>
-                    <pre><code>${JSON.stringify(data, null, 2)}</code></pre> <!-- JSON in code block -->
-                `;
-            } catch (error) {
-                extractionResponseContainer.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
-            } finally {
-                extractionLoadingMessage.innerHTML = '';  // Hide extraction loading message
-            }
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+
+        const data = await response.json();
+        extractionResponseContainer.innerHTML = `
+            <h3>Extracted Information:</h3>
+            <pre><code>${JSON.stringify(data, null, 2)}</code></pre>
+        `;
+    } catch (error) {
+        extractionResponseContainer.innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+    } finally {
+        extractionLoadingMessage.innerHTML = '';
+    }
+}
+
     </script>
 </head>
 <body>

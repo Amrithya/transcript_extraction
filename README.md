@@ -17,6 +17,9 @@ This project is a simple web application that allows users to generate call tran
   - `uvicorn`
   - `openai`
   - `python-dotenv`
+  - `uv`
+  - `tiktoken`
+  - `guidance`
 
 ## Getting Started
 
@@ -24,7 +27,6 @@ This project is a simple web application that allows users to generate call tran
 
 - Python 3.8 or higher
 - A valid OpenAI API key
-- Node.js (for serving the static files if needed)
 
 ### Installation
 
