@@ -9,7 +9,6 @@ import tiktoken
 from guidance import models, gen, system, user, assistant
 import logging
 import json
-import re
 
 # Creating FastAPI application instance
 app = FastAPI()
@@ -55,28 +54,29 @@ class ConstrainedGenerator:
     def __init__(self, model):
         self.model = model
 
-    # Generating structured output based on context and schema
-    def generate_structured_output(self, context: str, output_schema: Dict[str, Any], max_attempts: int = 5):
+    def generate_structured_output(self, paragraph: str, transcript: str, output_schema: Dict[str, Any], max_attempts: int = 5):
         schema_str = json.dumps(output_schema, indent=2)
-        
+
         prompt = f"""
         You are an expert information extraction assistant. 
-        Extract information following this exact JSON structure:
+        Your task is to extract information from the provided transcript based on the given paragraph and return it in the specified JSON format.
+        
+        Paragraph describing the information to extract: {paragraph}
+        
+        Transcript: {transcript}
+        
+        Here is the output schema you must follow:
         
         {schema_str}
         
-        Context: {context}
-        
-        Output the extracted information in the specified JSON format. 
-        Ensure your response is a complete, valid JSON object.
-        Do not include any text before or after the JSON object.
+        Please provide a complete and valid JSON object that matches this schema without any additional text.
+        Ensure that the information requested in the paragraph is added to the 'additional_info' section.
         """
-        
+
         for attempt in range(max_attempts):
             try:
-                # Generating response using the model
                 with system():
-                    self.model += "Generate a valid JSON object exactly matching the provided schema. No additional text."
+                    self.model += "Generate a valid JSON object exactly matching the provided schema."
                 
                 with user():
                     self.model += prompt
@@ -88,25 +88,35 @@ class ConstrainedGenerator:
                         stop=None,
                         temperature=0.1
                     )
-                
-                # Processing and parsing the generated JSON
+
                 json_str = result['output'].strip()
-                start = json_str.find('{')
-                end = json_str.rfind('}') + 1
-                if start != -1 and end != -1:
-                    json_str = json_str[start:end]
-                
-                json_str = re.sub(r'[^\x20-\x7E]', '', json_str)
-                
                 parsed_output = json.loads(json_str)
+                self.validate_output(parsed_output, output_schema)
                 return parsed_output
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parsing failed on attempt {attempt + 1}: {e}")
-                logger.warning(f"Generated output: {json_str}")
             except Exception as e:
                 logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-        
+
         raise ValueError(f"Failed to generate valid JSON after {max_attempts} attempts")
+
+    def validate_output(self, output: Any, schema: Dict[str, Any]):
+        if not isinstance(output, dict):
+            raise ValueError("Output is not a dictionary")
+        
+        for key, value_type in schema.items():
+            if key not in output:
+                raise ValueError(f"Missing key: {key}")
+            
+            if isinstance(value_type, dict):
+                self.validate_output(output[key], value_type)
+            elif isinstance(value_type, list):
+                if not isinstance(output[key], list):
+                    raise ValueError(f"Expected list for key: {key}")
+                for item in output[key]:
+                    self.validate_output(item, value_type[0])
+            elif value_type == "str" and not isinstance(output[key], str):
+                raise ValueError(f"Expected string for key: {key}")
 
 # Defining route for root endpoint
 @app.get("/", response_class=HTMLResponse)
@@ -136,29 +146,29 @@ async def generate_transcript(request: TopicRequest):
     transcript = result['output'].strip()
     return {"transcript": transcript}
 
+def parse_paragraph(paragraph: str) -> List[str]:
+    
+    return [field.strip() for field in paragraph.split("and")]
+
 # Defining route for information extraction
 @app.post("/extract_information")
 async def extract_information_endpoint(request: ExtractionRequest):
     logger.info(f"Received extraction request: {request}")
     
+    # Parse the paragraph to determine the fields to extract
+    fields_to_extract = parse_paragraph(request.paragraph)
+    
     output_schema = {
-        "issues": [
-            {
-                "description": "str"
-            }
-        ],
-        "solution": "str",
-        "additional_info": {
-            "key": "str"
-        }
+        
+        "extracted_info": {field: "str" for field in fields_to_extract}
     }
     
     generator = ConstrainedGenerator(openai_model)
     
     try:
-        # Extracting information using the constrained generator
         extracted_info = generator.generate_structured_output(
-            context=request.transcript, 
+            paragraph=request.paragraph,
+            transcript=request.transcript,
             output_schema=output_schema
         )
         return JSONResponse(content=extracted_info)
