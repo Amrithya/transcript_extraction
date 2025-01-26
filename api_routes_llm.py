@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 tokenizer = tiktoken.get_encoding('cl100k_base')
 
 # Configuring OpenAI model
-openai_model = models.OpenAI(   
+openai_model = models.OpenAI(
     model="llama-3.1-8b-instruct",
     max_streaming_tokens=1024,
     tokenizer=tokenizer,
@@ -58,33 +58,32 @@ class ConstrainedGenerator:
         schema_str = json.dumps(output_schema, indent=2)
 
         prompt = f"""
-        You are an expert information extraction assistant. 
+        You are an expert information extraction assistant.
         Your task is to extract information from the provided transcript based on the given paragraph and return it in the specified JSON format.
-        
+
         Paragraph describing the information to extract: {paragraph}
-        
+
         Transcript: {transcript}
-        
+
         Here is the output schema you must follow:
-        
+
         {schema_str}
-        
+
         Please provide a complete and valid JSON object that matches this schema without any additional text.
-        Ensure that the information requested in the paragraph is added to the 'additional_info' section.
         """
 
         for attempt in range(max_attempts):
             try:
                 with system():
                     self.model += "Generate a valid JSON object exactly matching the provided schema."
-                
+
                 with user():
                     self.model += prompt
-                
+
                 with assistant():
                     result = self.model + gen(
-                        'output', 
-                        max_tokens=1024, 
+                        'output',
+                        max_tokens=1024,
                         stop=None,
                         temperature=0.1
                     )
@@ -95,6 +94,8 @@ class ConstrainedGenerator:
                 return parsed_output
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parsing failed on attempt {attempt + 1}: {e}")
+            except ValueError as ve:
+                logger.warning(f"Validation failed on attempt {attempt + 1}: {ve}")
             except Exception as e:
                 logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
 
@@ -103,11 +104,11 @@ class ConstrainedGenerator:
     def validate_output(self, output: Any, schema: Dict[str, Any]):
         if not isinstance(output, dict):
             raise ValueError("Output is not a dictionary")
-        
+
         for key, value_type in schema.items():
             if key not in output:
                 raise ValueError(f"Missing key: {key}")
-            
+
             if isinstance(value_type, dict):
                 self.validate_output(output[key], value_type)
             elif isinstance(value_type, list):
@@ -129,42 +130,39 @@ async def read_root():
 async def generate_transcript(request: TopicRequest):
     global openai_model
     topic = request.topic
-    
+
     prompt_func = {
         'system': "You will generate a call transcript based on the topic, and it can vary in structure.",
         'user': f"Generate a call transcript between a client and a contact center agent discussing {topic}."
     }
-    
-    # Generating transcript using the model
+
     with system():
         openai_model += prompt_func['system']
     with user():
         openai_model += prompt_func['user']
     with assistant():
         result = openai_model + gen('output', max_tokens=1024)
-    
+
     transcript = result['output'].strip()
     return {"transcript": transcript}
 
 def parse_paragraph(paragraph: str) -> List[str]:
-    
-    return [field.strip() for field in paragraph.split("and")]
+    unified_paragraph = paragraph.replace("and", ",")
+    return [field.strip() for field in unified_paragraph.split(",")]
 
 # Defining route for information extraction
 @app.post("/extract_information")
 async def extract_information_endpoint(request: ExtractionRequest):
     logger.info(f"Received extraction request: {request}")
-    
-    # Parse the paragraph to determine the fields to extract
+
     fields_to_extract = parse_paragraph(request.paragraph)
-    
+
     output_schema = {
-        
         "extracted_info": {field: "str" for field in fields_to_extract}
     }
-    
+
     generator = ConstrainedGenerator(openai_model)
-    
+
     try:
         extracted_info = generator.generate_structured_output(
             paragraph=request.paragraph,
@@ -172,7 +170,7 @@ async def extract_information_endpoint(request: ExtractionRequest):
             output_schema=output_schema
         )
         return JSONResponse(content=extracted_info)
-    
+
     except ValueError as e:
         logger.error(f"Extraction error: {e}")
         return JSONResponse(
